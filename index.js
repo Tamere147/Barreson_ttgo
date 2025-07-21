@@ -1,5 +1,5 @@
-import { chromium } from 'playwright';
 import express from 'express';
+import { chromium } from 'playwright';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -19,30 +19,18 @@ app.get('/nowplaying', async (req, res) => {
       timeout: 60000
     });
 
-    // Chemins CSS exacts comme dans ton code Puppeteer
-    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content img#album.active', { timeout: 30000 });
-    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active', { timeout: 30000 });
-    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active', { timeout: 30000 });
+    await page.waitForSelector('h4#artists.active', { timeout: 30000 });
+    await page.waitForSelector('h2#name.active', { timeout: 30000 });
+    await page.waitForSelector('img#album.active', { timeout: 30000 });
 
-    const artist = await page.$eval(
-      'html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active',
-      el => el.textContent.trim()
-    );
-
-    const title = await page.$eval(
-      'html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active',
-      el => el.textContent.trim()
-    );
-
-    const image = await page.$eval(
-      'html body div.wrapper div#app-cover.raise.active div#player div#player-content img#album.active',
-      el => el.src
-    );
+    const artist = await page.$eval('h4#artists.active', el => el.textContent.trim());
+    const title = await page.$eval('h2#name.active', el => el.textContent.trim());
+    const image = await page.$eval('img#album.active', el => el.src);
 
     res.json({ artist, title, image });
 
   } catch (err) {
-    console.error('❌ Scraping failed:', err.message);
+    console.error('❌ Scraping failed:', err);
     res.status(500).json({ error: err.message });
   } finally {
     if (browser) await browser.close();
