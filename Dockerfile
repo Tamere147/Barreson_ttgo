@@ -1,18 +1,15 @@
-FROM mcr.microsoft.com/playwright:v1.54.1-jammy
+# Utilise une image officielle Node avec Puppeteer
+FROM ghcr.io/puppeteer/puppeteer:latest
 
-
-# Définir le dossier de travail
+# Crée un dossier de travail
 WORKDIR /app
 
-# Copier les fichiers
-COPY package.json package-lock.json* ./
+# Copie les fichiers du projet dans le conteneur
+COPY package.json .
+COPY scraper.js .
+
+# Installe les dépendances
 RUN npm install
 
-COPY . .
-
-# Port exposé pour Koyeb
-EXPOSE 10805
-
-# Lancer ton script
-CMD ["npm", "start"]
-
+# Définit la commande de démarrage
+CMD ["node", "scraper.js"]
