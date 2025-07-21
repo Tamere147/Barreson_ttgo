@@ -1,13 +1,10 @@
-FROM node:20
+FROM mcr.microsoft.com/playwright:v1.44.0-jammy
 
-# Création du dossier de travail
 WORKDIR /app
 
-# Copie des fichiers
 COPY package*.json ./
 RUN npm install
 
 COPY . .
 
-# Démarrage
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
