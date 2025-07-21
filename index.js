@@ -2,7 +2,7 @@ import express from 'express';
 import { chromium } from 'playwright';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10805;
 
 app.get('/nowplaying', async (req, res) => {
   let browser;
