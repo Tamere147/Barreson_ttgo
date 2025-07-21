@@ -1,15 +1,15 @@
-import puppeteer from 'puppeteer';
+import { chromium } from 'playwright';
 
 (async () => {
-  const browser = await puppeteer.launch({
+  const browser = await chromium.launch({
     headless: true,
-    args: ['--no-sandbox', '--disable-setuid-sandbox']
+    args: ['--no-sandbox']
   });
 
   const page = await browser.newPage();
   await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
     waitUntil: 'domcontentloaded',
-    timeout: 0,
+    timeout: 60000 // ← plus généreux
   });
 
   try {
@@ -17,20 +17,9 @@ import puppeteer from 'puppeteer';
     await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active', { timeout: 30000 });
     await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active', { timeout: 30000 });
 
-    const artist = await page.$eval(
-      'html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active',
-      el => el.textContent.trim()
-    );
-
-    const title = await page.$eval(
-      'html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active',
-      el => el.textContent.trim()
-    );
-
-    const image = await page.$eval(
-      'html body div.wrapper div#app-cover.raise.active div#player div#player-content img#album.active',
-      el => el.src
-    );
+    const artist = await page.$eval('h4#artists.active', el => el.textContent.trim());
+    const title = await page.$eval('h2#name.active', el => el.textContent.trim());
+    const image = await page.$eval('img#album.active', el => el.src);
 
     console.log({ artist, title, image });
 
