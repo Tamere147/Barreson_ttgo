@@ -1,4 +1,10 @@
-FROM mcr.microsoft.com/playwright:v1.44.0-jammy
+FROM node:20-slim
+
+# Install Chromium dependencies
+RUN apt-get update && apt-get install -y \
+    chromium \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -7,4 +13,4 @@ RUN npm install
 
 COPY . .
 
-CMD ["node", "index.js"]
+CMD ["npm", "start"]
