@@ -1,31 +1,37 @@
+import express from 'express';
 import { chromium } from 'playwright';
 
-(async () => {
-  const browser = await chromium.launch({
-    headless: true,
-    args: ['--no-sandbox']
-  });
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-  const page = await browser.newPage();
-  await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
-    waitUntil: 'domcontentloaded',
-    timeout: 60000 // ← plus généreux
-  });
-
+app.get('/nowplaying', async (req, res) => {
   try {
-    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content img#album.active', { timeout: 30000 });
-    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active', { timeout: 30000 });
-    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active', { timeout: 30000 });
+    const browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+
+    await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
+      waitUntil: 'domcontentloaded',
+      timeout: 0
+    });
+
+    await page.waitForSelector('h4#artists.active', { timeout: 10000 });
 
     const artist = await page.$eval('h4#artists.active', el => el.textContent.trim());
-    const title = await page.$eval('h2#name.active', el => el.textContent.trim());
-    const image = await page.$eval('img#album.active', el => el.src);
+    const title = await page.$eval('h2#title.active', el => el.textContent.trim());
+    const image = await page.$eval('.artwork', el => {
+      const style = el.getAttribute('style');
+      const match = style.match(/url\(['"]?(.*?)['"]?\)/);
+      return match ? match[1] : '';
+    });
 
-    console.log({ artist, title, image });
+    await browser.close();
 
+    res.json({ artist, title, image });
   } catch (err) {
-    console.error('❌ Erreur de scraping :', err.message);
+    res.status(500).json({ error: err.message });
   }
+});
 
-  await browser.close();
-})();
+app.listen(PORT, () => {
+  console.log(`✅ Serveur en ligne sur http://localhost:${PORT}/nowplaying`);
+});
