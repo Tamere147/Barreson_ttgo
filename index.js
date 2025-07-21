@@ -1,42 +1,41 @@
-import express from 'express';
 import puppeteer from 'puppeteer';
 
-const app = express();
-const PORT = process.env.PORT || 10805;
+(async () => {
+  const browser = await puppeteer.launch({ headless: true });
+  const page = await browser.newPage();
 
-app.get('/nowplaying', async (req, res) => {
-  let browser;
+  await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
+    waitUntil: 'domcontentloaded',
+    timeout: 0,
+  });
+
   try {
-    browser = await puppeteer.launch({
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox'],
-    });
+    // Attente des sélecteurs complets
+    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content img#album.active', { timeout: 30000 });
+    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active', { timeout: 30000 });
+    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active', { timeout: 30000 });
 
-    const page = await browser.newPage();
-    await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
-      waitUntil: 'domcontentloaded',
-    });
+    // Scraping des données
+    const artist = await page.$eval(
+      'html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active',
+      el => el.textContent.trim()
+    );
 
-    await page.waitForSelector('h4#artists.active');
+    const title = await page.$eval(
+      'html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active',
+      el => el.textContent.trim()
+    );
 
-    const artist = await page.$eval('h4#artists.active', el => el.textContent.trim());
-    const title = await page.$eval('h2#title.active', el => el.textContent.trim());
+    const image = await page.$eval(
+      'html body div.wrapper div#app-cover.raise.active div#player div#player-content img#album.active',
+      el => el.src
+    );
 
-    const image = await page.$eval('.artwork', el => {
-      const style = el.getAttribute('style');
-      const match = style.match(/url\(['"]?(.*?)['"]?\)/);
-      return match ? match[1] : '';
-    });
+    console.log({ artist, title, image });
 
-    res.json({ artist, title, image });
   } catch (err) {
-    console.error('❌ Scraping failed:', err);
-    res.status(500).json({ error: 'Scraping failed' });
-  } finally {
-    if (browser) await browser.close();
+    console.error('❌ Erreur de scraping :', err.message);
   }
-});
 
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}/nowplaying`);
-});
+  await browser.close();
+})();
