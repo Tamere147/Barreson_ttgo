@@ -1,16 +1,16 @@
+// scraper.js
+import puppeteer from 'puppeteer';
 import express from 'express';
-import { chromium } from 'playwright';
 
 const app = express();
-const PORT = process.env.PORT || 10805;
+const PORT = process.env.PORT || 3000;
 
 app.get('/nowplaying', async (req, res) => {
   let browser;
-
   try {
-    browser = await chromium.launch({
+    browser = await puppeteer.launch({
       headless: true,
-      args: ['--no-sandbox']
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
 
     const page = await browser.newPage();
@@ -28,9 +28,8 @@ app.get('/nowplaying', async (req, res) => {
     const image = await page.$eval('img#album.active', el => el.src);
 
     res.json({ artist, title, image });
-
   } catch (err) {
-    console.error('❌ Scraping failed:', err);
+    console.error('❌ Scraping failed:', err.message);
     res.status(500).json({ error: err.message });
   } finally {
     if (browser) await browser.close();
@@ -38,5 +37,5 @@ app.get('/nowplaying', async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Serveur Playwright actif sur http://localhost:${PORT}/nowplaying`);
+  console.log(`✅ Server running at http://localhost:${PORT}/nowplaying`);
 });
