@@ -11,7 +11,7 @@ RUN npm install
 COPY . .
 
 # Port exposé pour Koyeb
-EXPOSE 3000
+EXPOSE 10805
 
 # Lancer ton script
 CMD ["npm", "start"]
