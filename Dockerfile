@@ -6,10 +6,10 @@ WORKDIR /app
 
 # Copie les fichiers du projet dans le conteneur
 COPY package.json .
-COPY scraper.js .
+COPY index.js .
 
 # Installe les dépendances
 RUN npm install
 
 # Définit la commande de démarrage
-CMD ["node", "scraper.js"]
+CMD ["node", "index.js"]
