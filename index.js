@@ -19,9 +19,9 @@ app.get('/nowplaying', async (req, res) => {
       timeout: 60000
     });
 
-    await page.waitForSelector('h4#artists.active', { timeout: 30000 });
-    await page.waitForSelector('h2#name.active', { timeout: 30000 });
-    await page.waitForSelector('img#album.active', { timeout: 30000 });
+    await page.waitForSelector('h4#artists.active', { timeout: 60000 });
+    await page.waitForSelector('h2#name.active', { timeout: 60000 });
+    await page.waitForSelector('img#album.active', { timeout: 60000 });
 
     const artist = await page.$eval('h4#artists.active', el => el.textContent.trim());
     const title = await page.$eval('h2#name.active', el => el.textContent.trim());
