@@ -58,6 +58,9 @@ app.get('/nowplaying', async (req, res) => {
     res.status(500).send('Erreur lors de la récupération de la lecture en cours.');
   }
 });
+app.get('/', (req, res) => {
+  res.send('OK');
+});
 
 app.listen(port, () => {
   console.log(`🎧 Serveur nowplaying en écoute sur http://localhost:${port}/nowplaying`);
