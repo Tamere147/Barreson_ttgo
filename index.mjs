@@ -26,26 +26,25 @@ async function getAccessToken() {
   return data.access_token;
 }
 
-function rgb888to565(r: number, g: number, b: number): number {
+function rgb888to565(r, g, b) {
   return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
 }
 
-async function convertImageToRGB565Base64(url: string): Promise<string> {
+async function convertImageToRGB565Base64(url) {
   const response = await fetch(url);
   const buffer = await response.buffer();
 
-  const raw = await sharp(buffer)
+  const { data } = await sharp(buffer)
     .resize(64, 64)
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const rgbBuffer = raw.data;
-  const outBuffer = Buffer.alloc(64 * 64 * 2); // 2 octets par pixel
+  const outBuffer = Buffer.alloc(64 * 64 * 2);
 
   for (let i = 0; i < 64 * 64; i++) {
-    const r = rgbBuffer[i * 3];
-    const g = rgbBuffer[i * 3 + 1];
-    const b = rgbBuffer[i * 3 + 2];
+    const r = data[i * 3];
+    const g = data[i * 3 + 1];
+    const b = data[i * 3 + 2];
 
     const rgb565 = rgb888to565(r, g, b);
     outBuffer[i * 2] = (rgb565 >> 8) & 0xFF;
@@ -78,7 +77,7 @@ app.get('/nowplaying', async (req, res) => {
       title: data.item.name,
       artist: data.item.artists.map(artist => artist.name).join(', '),
       album: data.item.album.name,
-      image_rgb565: imageRGB565Base64, // ⚠️ base64 des octets 16 bits RGB565
+      image_rgb565: imageRGB565Base64,
       progress_ms: data.progress_ms,
       duration_ms: data.item.duration_ms
     };
