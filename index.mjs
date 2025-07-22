@@ -77,6 +77,7 @@ app.get('/nowplaying', async (req, res) => {
       title: data.item.name,
       artist: data.item.artists.map(artist => artist.name).join(', '),
       album: data.item.album.name,
+      image: imageUrl,
       image_rgb565: imageRGB565Base64,
       progress_ms: data.progress_ms,
       duration_ms: data.item.duration_ms
