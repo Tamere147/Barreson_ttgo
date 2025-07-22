@@ -27,17 +27,26 @@ async function getAccessToken() {
 }
 
 function rgb888to565(r, g, b) {
-  return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+  const r5 = (r >> 3) & 0x1F;
+  const g6 = (g >> 2) & 0x3F;
+  const b5 = (b >> 3) & 0x1F;
+  return (r5 << 11) | (g6 << 5) | b5;
 }
+
 
 async function convertImageToRGB565Base64(url) {
   const response = await fetch(url);
   const buffer = await response.buffer();
 
-  const { data } = await sharp(buffer)
+  const { data, info } = await sharp(buffer)
     .resize(24, 24)
+    .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
+
+  if (info.channels !== 3) {
+    throw new Error('L’image n’est pas en RGB');
+  }
 
   const outBuffer = Buffer.alloc(24 * 24 * 2);
 
@@ -45,14 +54,16 @@ async function convertImageToRGB565Base64(url) {
     const r = data[i * 3];
     const g = data[i * 3 + 1];
     const b = data[i * 3 + 2];
-
     const rgb565 = rgb888to565(r, g, b);
-    outBuffer[i * 2] = (rgb565 >> 8) & 0xFF;
-    outBuffer[i * 2 + 1] = rgb565 & 0xFF;
+
+    // ⚠️ IMPORTANT : MSB first pour ESP32 (big endian)
+    outBuffer[i * 2] = (rgb565 >> 8) & 0xFF;      // MSB
+    outBuffer[i * 2 + 1] = rgb565 & 0xFF;         // LSB
   }
 
   return outBuffer.toString('base64');
 }
+
 
 app.get('/nowplaying', async (req, res) => {
   try {
