@@ -1,5 +1,6 @@
 import express from 'express';
 import fetch from 'node-fetch';
+import sharp from 'sharp';
 
 const CLIENT_ID = 'd1602b409bf54134b521955ac62b08e6';
 const CLIENT_SECRET = 'c12f56e3c9a543b58b92455ede5f58d8';
@@ -8,7 +9,6 @@ const REFRESH_TOKEN = 'AQD1B6wv-rXieDV6vkH_I-qaF_Arjh_rSJa8UUePuMN0iZbw-lQ24P40B
 const app = express();
 const port = 3000;
 
-// Fonction pour obtenir un nouvel access token
 async function getAccessToken() {
   const response = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
@@ -26,14 +26,41 @@ async function getAccessToken() {
   return data.access_token;
 }
 
+function rgb888to565(r: number, g: number, b: number): number {
+  return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
+}
+
+async function convertImageToRGB565Base64(url: string): Promise<string> {
+  const response = await fetch(url);
+  const buffer = await response.buffer();
+
+  const raw = await sharp(buffer)
+    .resize(64, 64)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const rgbBuffer = raw.data;
+  const outBuffer = Buffer.alloc(64 * 64 * 2); // 2 octets par pixel
+
+  for (let i = 0; i < 64 * 64; i++) {
+    const r = rgbBuffer[i * 3];
+    const g = rgbBuffer[i * 3 + 1];
+    const b = rgbBuffer[i * 3 + 2];
+
+    const rgb565 = rgb888to565(r, g, b);
+    outBuffer[i * 2] = (rgb565 >> 8) & 0xFF;
+    outBuffer[i * 2 + 1] = rgb565 & 0xFF;
+  }
+
+  return outBuffer.toString('base64');
+}
+
 app.get('/nowplaying', async (req, res) => {
   try {
     const accessToken = await getAccessToken();
 
     const nowPlayingResponse = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      }
+      headers: { 'Authorization': `Bearer ${accessToken}` }
     });
 
     if (nowPlayingResponse.status === 204) {
@@ -41,13 +68,17 @@ app.get('/nowplaying', async (req, res) => {
     }
 
     const data = await nowPlayingResponse.json();
+    const imageUrl = data.item.album.images[0]?.url;
+    const imageRGB565Base64 = imageUrl
+      ? await convertImageToRGB565Base64(imageUrl)
+      : null;
 
     const track = {
       playing: true,
       title: data.item.name,
       artist: data.item.artists.map(artist => artist.name).join(', '),
       album: data.item.album.name,
-      image: data.item.album.images[0]?.url,
+      image_rgb565: imageRGB565Base64, // ⚠️ base64 des octets 16 bits RGB565
       progress_ms: data.progress_ms,
       duration_ms: data.item.duration_ms
     };
@@ -55,13 +86,12 @@ app.get('/nowplaying', async (req, res) => {
     res.json(track);
   } catch (err) {
     console.error('Erreur:', err);
-    res.status(500).send('Erreur lors de la récupération de la lecture en cours.');
+    res.status(500).send('Erreur serveur.');
   }
 });
-app.get('/', (req, res) => {
-  res.send('OK');
-});
+
+app.get('/', (req, res) => res.send('OK'));
 
 app.listen(port, () => {
-  console.log(`🎧 Serveur nowplaying en écoute sur http://localhost:${port}/nowplaying`);
+  console.log(`🎧 Serveur nowplaying en écoute sur http://localhost:${port}`);
 });
