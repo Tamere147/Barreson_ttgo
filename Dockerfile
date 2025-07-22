@@ -1,10 +1,10 @@
-FROM mcr.microsoft.com/playwright:v1.44.1-jammy
+FROM mcr.microsoft.com/playwright:v1.54.1-jammy
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY package.json .
 RUN npm install
 
-COPY . .
+COPY index.mjs .
 
 CMD ["node", "index.mjs"]
