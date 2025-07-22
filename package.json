@@ -1,5 +1,5 @@
 {
-  "name": "spotify-scraper",
+  "name": "spotify-nowplaying",
   "version": "1.0.0",
   "type": "module",
   "main": "index.mjs",
@@ -8,6 +8,6 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "playwright": "^1.54.1"
+    "node-fetch": "^3.3.2"
   }
 }
