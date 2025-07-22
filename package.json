@@ -1,0 +1,11 @@
+{
+  "name": "spotify-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@playwright/test": "^1.45.1"
+  }
+}
