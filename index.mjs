@@ -1,15 +1,14 @@
-import { chromium } from '@playwright/test';
+// index.mjs
+import express from 'express';
+import { chromium } from 'playwright';
 
-const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
 const app = express();
-const PORT = process.env.PORT || 3000;
+const port = process.env.PORT || 3000;
 
-await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
-  waitUntil: 'domcontentloaded'
+app.get('/', async (req, res) => {
+  res.send('OK'); // Réponse attendue par Koyeb
 });
 
-const title = await page.title();
-console.log('Page title:', title);
-
-await browser.close();
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
