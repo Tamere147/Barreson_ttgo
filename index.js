@@ -1,33 +1,40 @@
+// index.js
 import puppeteer from 'puppeteer';
+import fetch from 'node-fetch';
 
-const browser = await puppeteer.launch({
-  headless: 'new',
-  args: ['--no-sandbox']
-});
+const SCRAPE_INTERVAL = 15000; // 15 seconds
 
-const page = await browser.newPage();
+async function scrapeAndSend() {
+  try {
+    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
+    const page = await browser.newPage();
 
-// FAIRE PASSER POUR UN VRAI NAVIGATEUR
-await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36');
-await page.setViewport({ width: 1366, height: 768 });
+    await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
+      waitUntil: 'networkidle0',
+      timeout: 0
+    });
 
-await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
-  waitUntil: 'networkidle0', // attendre que le réseau soit "calme"
-  timeout: 60000
-});
+    const data = await page.evaluate(() => {
+      const title = document.querySelector('.track-name')?.innerText || '';
+      const artist = document.querySelector('.artist-name')?.innerText || '';
+      const progress = document.querySelector('.progress-time')?.innerText || '';
+      return { title, artist, progress };
+    });
 
-try {
-  await page.waitForSelector('#player #player-content img#album.active', { timeout: 30000 });
-  await page.waitForSelector('#player #player-content #player-track h2#name.active', { timeout: 30000 });
-  await page.waitForSelector('#player #player-content #player-track h4#artists.active', { timeout: 30000 });
+    await browser.close();
 
-  const title = await page.$eval('#player #player-content #player-track h2#name.active', el => el.textContent.trim());
-  const artist = await page.$eval('#player #player-content #player-track h4#artists.active', el => el.textContent.trim());
-  const image = await page.$eval('#player #player-content img#album.active', el => el.src);
+    console.log("Données Spotify :", data);
 
-  console.log({ title, artist, image });
-} catch (err) {
-  console.error('❌ Scraping failed:', err.message);
+    // Envoie les données vers ton serveur
+    await fetch('https://waytec.fr/nowplaying_api.php', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  } catch (err) {
+    console.error('Erreur scraping :', err);
+  }
 }
 
-await browser.close();
+setInterval(scrapeAndSend, SCRAPE_INTERVAL);
+scrapeAndSend();
