@@ -41,7 +41,7 @@ async function convertImageToRGB565Base64(url) {
 
   const outBuffer = Buffer.alloc(64 * 64 * 2);
 
-  for (let i = 0; i < 64 * 64; i++) {
+  for (let i = 0; i < 32 * 32; i++) {
     const r = data[i * 3];
     const g = data[i * 3 + 1];
     const b = data[i * 3 + 2];
