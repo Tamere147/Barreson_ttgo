@@ -40,7 +40,6 @@ async function convertImageToRGB565Base64(url) {
 
   const { data, info } = await sharp(buffer)
     .resize(24, 24)
-    .ensureAlpha()      // ajoute alpha si absent
     .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
