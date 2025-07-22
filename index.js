@@ -1,40 +1,40 @@
-// index.js
-import puppeteer from 'puppeteer';
-import fetch from 'node-fetch';
+const puppeteer = require('puppeteer');
 
-const SCRAPE_INTERVAL = 15000; // 15 seconds
+(async () => {
+  const browser = await puppeteer.launch({ headless: true });
+  const page = await browser.newPage();
 
-async function scrapeAndSend() {
+  await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
+    waitUntil: 'domcontentloaded'
+  });
+
   try {
-    const browser = await puppeteer.launch({ headless: true, args: ['--no-sandbox'] });
-    const page = await browser.newPage();
+    // Attente des bons sélecteurs
+    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content img#album.active');
+    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active');
+    await page.waitForSelector('html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active');
 
-    await page.goto('https://widget.nowplaying.site/hEcrFVjEMol3fzEC', {
-      waitUntil: 'networkidle0',
-      timeout: 0
-    });
+    // Récupération avec chemin CSS précis
+    const artist = await page.$eval(
+      'html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track div.artists-height-fix h4#artists.active',
+      el => el.textContent.trim()
+    );
 
-    const data = await page.evaluate(() => {
-      const title = document.querySelector('.track-name')?.innerText || '';
-      const artist = document.querySelector('.artist-name')?.innerText || '';
-      const progress = document.querySelector('.progress-time')?.innerText || '';
-      return { title, artist, progress };
-    });
+    const title = await page.$eval(
+      'html body div.wrapper div#app-cover.raise.active div#player div#player-content div#player-track h2#name.active',
+      el => el.textContent.trim()
+    );
 
-    await browser.close();
+    const image = await page.$eval(
+      'html body div.wrapper div#app-cover.raise.active div#player div#player-content img#album.active',
+      el => el.src
+    );
 
-    console.log("Données Spotify :", data);
+    console.log({ artist, title, image });
 
-    // Envoie les données vers ton serveur
-    await fetch('https://waytec.fr/nowplaying_api.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
   } catch (err) {
-    console.error('Erreur scraping :', err);
+    console.error('❌ Erreur de scraping :', err.message);
   }
-}
 
-setInterval(scrapeAndSend, SCRAPE_INTERVAL);
-scrapeAndSend();
+  await browser.close();
+})();
