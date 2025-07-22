@@ -1,12 +1,13 @@
 {
-  "name": "nowplaying-scraper",
+  "name": "spotify-scraper",
   "version": "1.0.0",
   "type": "module",
+  "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "puppeteer": "^22.8.2"
+    "puppeteer": "^22.0.0",
+    "node-fetch": "^3.3.2"
   }
 }
