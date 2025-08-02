@@ -107,22 +107,25 @@ app.get('/nowplaying', async (req, res) => {
       : null;
 
     const trackId = data.item.id;
-  const analysisResponse = await fetch(analysisUrl, {
-  const analysisUrl = `https://api.spotify.com/v1/audio-analysis/${trackId}`;
-  headers: { 'Authorization': `Bearer ${accessToken}` }
-});
+    console.log("🎵 Track ID:", trackId);
 
-
+    const analysisToken = await getAppAccessToken(); // ✅ Token app (pas refresh_token)
+    const analysisUrl = `https://api.spotify.com/v1/audio-analysis/${trackId}`;
+    const analysisResponse = await fetch(analysisUrl, {
+      headers: { 'Authorization': `Bearer ${analysisToken}` }
+    });
 
     let segments = [];
 
     if (!analysisResponse.ok) {
-      console.error(`Erreur API audio-analysis : ${analysisResponse.status}`);
+      const errText = await analysisResponse.text();
+      console.error(`❌ Erreur API audio-analysis : ${analysisResponse.status}`);
+      console.error(`🧾 Détails : ${errText}`);
     } else {
       const analysisData = await analysisResponse.json();
 
       if (!analysisData.segments || !Array.isArray(analysisData.segments)) {
-        console.error("Champ segments manquant ou invalide dans audio-analysis");
+        console.error("⚠️ Champ segments manquant ou invalide dans audio-analysis");
       } else {
         segments = analysisData.segments.map(s => ({
           start: s.start,
@@ -149,7 +152,7 @@ app.get('/nowplaying', async (req, res) => {
     res.json(track);
 
   } catch (err) {
-    console.error('Erreur:', err);
+    console.error('💥 Erreur serveur:', err);
     res.status(500).send('Erreur serveur.');
   }
 });
