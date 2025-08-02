@@ -107,12 +107,10 @@ app.get('/nowplaying', async (req, res) => {
       : null;
 
     const trackId = data.item.id;
-    const analysisToken = await getAppAccessToken(); // ✅ Token sans compte
-    const analysisUrl = `https://api.spotify.com/v1/audio-analysis/${trackId}`;
+const analysisResponse = await fetch(analysisUrl, {
+  headers: { 'Authorization': `Bearer ${accessToken}` }
+});
 
-    const analysisResponse = await fetch(analysisUrl, {
-      headers: { 'Authorization': `Bearer ${analysisToken}` }
-    });
 
 
     let segments = [];
