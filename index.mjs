@@ -1,13 +1,23 @@
+// ✅ DEPENDANCES
 import express from 'express';
 import fetch from 'node-fetch';
 import sharp from 'sharp';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
+// ✅ CONSTANTES SPOTIFY
 const CLIENT_ID = 'd1602b409bf54134b521955ac62b08e6';
 const CLIENT_SECRET = 'c12f56e3c9a543b58b92455ede5f58d8';
 const REFRESH_TOKEN = 'AQD1B6wv-rXieDV6vkH_I-qaF_Arjh_rSJa8UUePuMN0iZbw-lQ24P40Bk44oxlPMukM_5_b0F_AjN0Nm4bxJEuYlEOOMyrDN2Ekc-B14hV0aD4qbm1MO_hRc4hcez6GcrU';
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
+
+// 📁 Chemin absolu
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const firmwareDir = path.join(__dirname, 'firmware');
+
+// ✅ FONCTIONS SPOTIFY
 
 async function getAccessToken() {
   const response = await fetch('https://accounts.spotify.com/api/token', {
@@ -33,7 +43,6 @@ function rgb888to565(r, g, b) {
   return (r5 << 11) | (g6 << 5) | b5;
 }
 
-
 async function convertImageToRGB565Base64(url) {
   const response = await fetch(url);
   const buffer = await response.buffer();
@@ -49,21 +58,19 @@ async function convertImageToRGB565Base64(url) {
   }
 
   const outBuffer = Buffer.alloc(24 * 24 * 2);
-
   for (let i = 0; i < 24 * 24; i++) {
     const r = data[i * 3];
     const g = data[i * 3 + 1];
     const b = data[i * 3 + 2];
     const rgb565 = rgb888to565(r, g, b);
-
-    // ⚠️ IMPORTANT : MSB first pour ESP32 (big endian)
-    outBuffer[i * 2] = (rgb565 >> 8) & 0xFF;      // MSB
-    outBuffer[i * 2 + 1] = rgb565 & 0xFF;         // LSB
+    outBuffer[i * 2] = (rgb565 >> 8) & 0xFF;
+    outBuffer[i * 2 + 1] = rgb565 & 0xFF;
   }
 
   return outBuffer.toString('base64');
 }
 
+// ✅ ENDPOINT SPOTIFY
 
 app.get('/nowplaying', async (req, res) => {
   try {
@@ -101,8 +108,26 @@ app.get('/nowplaying', async (req, res) => {
   }
 });
 
-app.get('/', (req, res) => res.send('OK'));
+// ✅ ENDPOINT MISE À JOUR OTA
 
+// Sert version.txt
+app.get('/firmware/version.txt', (req, res) => {
+  res.send('1.0.1'); // ✅ à modifier manuellement pour chaque nouvelle version
+});
+
+// Sert le fichier .bin
+app.get('/firmware/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filepath = path.join(firmwareDir, filename);
+  res.sendFile(filepath);
+});
+
+// ✅ Page racine simple
+app.get('/', (req, res) => {
+  res.send('🎧 API TTGO Spotify + OTA prête !');
+});
+
+// ✅ Lancement serveur
 app.listen(port, () => {
-  console.log(`🎧 Serveur nowplaying en écoute sur http://localhost:${port}`);
+  console.log(`🚀 Serveur TTGO Spotify + OTA sur http://localhost:${port}`);
 });
