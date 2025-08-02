@@ -36,6 +36,21 @@ async function getAccessToken() {
   const data = await response.json();
   return data.access_token;
 }
+async function getAppAccessToken() {
+  const response = await fetch('https://accounts.spotify.com/api/token', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64'),
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: new URLSearchParams({
+      grant_type: 'client_credentials'
+    })
+  });
+
+  const data = await response.json();
+  return data.access_token;
+}
 
 function rgb888to565(r, g, b) {
   const r5 = (r >> 3) & 0x1F;
@@ -92,11 +107,13 @@ app.get('/nowplaying', async (req, res) => {
       : null;
 
     const trackId = data.item.id;
+    const analysisToken = await getAppAccessToken(); // ✅ Token sans compte
     const analysisUrl = `https://api.spotify.com/v1/audio-analysis/${trackId}`;
 
     const analysisResponse = await fetch(analysisUrl, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
+      headers: { 'Authorization': `Bearer ${analysisToken}` }
     });
+
 
     let segments = [];
 
