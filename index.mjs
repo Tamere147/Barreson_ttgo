@@ -73,8 +73,6 @@ async function convertImageToRGB565Base64(url) {
 
 // ✅ ENDPOINT SPOTIFY
 
-// 🔁 Ajoutons l'analyse audio dans /nowplaying
-
 app.get('/nowplaying', async (req, res) => {
   try {
     const accessToken = await getAccessToken();
@@ -93,7 +91,32 @@ app.get('/nowplaying', async (req, res) => {
       ? await convertImageToRGB565Base64(imageUrl)
       : null;
 
-    // 🎵 Infos de la musique actuelle
+    const trackId = data.item.id;
+    const analysisUrl = `https://api.spotify.com/v1/audio-analysis/${trackId}`;
+
+    const analysisResponse = await fetch(analysisUrl, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    let segments = [];
+
+    if (!analysisResponse.ok) {
+      console.error(`Erreur API audio-analysis : ${analysisResponse.status}`);
+    } else {
+      const analysisData = await analysisResponse.json();
+
+      if (!analysisData.segments || !Array.isArray(analysisData.segments)) {
+        console.error("Champ segments manquant ou invalide dans audio-analysis");
+      } else {
+        segments = analysisData.segments.map(s => ({
+          start: s.start,
+          duration: s.duration,
+          loudness: s.loudness_max
+        })).slice(0, 200); // Limite mémoire
+        console.log(`✅ ${segments.length} segments récupérés`);
+      }
+    }
+
     const track = {
       playing: true,
       title: data.item.name,
@@ -103,27 +126,12 @@ app.get('/nowplaying', async (req, res) => {
       image_rgb565: imageRGB565Base64,
       progress_ms: data.progress_ms,
       duration_ms: data.item.duration_ms,
-      track_id: data.item.id
+      track_id: trackId,
+      segments
     };
 
-    // 🔎 Récupère l'audio analysis
-    const analysisResponse = await fetch(`https://api.spotify.com/v1/audio-analysis/${track.track_id}`, {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-
-    if (analysisResponse.ok) {
-      const analysis = await analysisResponse.json();
-      // ⚠️ On extrait seulement start, duration et loudness des 64 premiers segments
-      track.segments = analysis.segments.slice(0, 64).map(seg => ({
-        start: seg.start,
-        duration: seg.duration,
-        loudness: seg.loudness_max
-      }));
-    } else {
-      track.segments = [];
-    }
-
     res.json(track);
+
   } catch (err) {
     console.error('Erreur:', err);
     res.status(500).send('Erreur serveur.');
