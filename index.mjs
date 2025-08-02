@@ -73,6 +73,8 @@ async function convertImageToRGB565Base64(url) {
 
 // ✅ ENDPOINT SPOTIFY
 
+// 🔁 Ajoutons l'analyse audio dans /nowplaying
+
 app.get('/nowplaying', async (req, res) => {
   try {
     const accessToken = await getAccessToken();
@@ -91,6 +93,7 @@ app.get('/nowplaying', async (req, res) => {
       ? await convertImageToRGB565Base64(imageUrl)
       : null;
 
+    // 🎵 Infos de la musique actuelle
     const track = {
       playing: true,
       title: data.item.name,
@@ -99,8 +102,26 @@ app.get('/nowplaying', async (req, res) => {
       image: imageUrl,
       image_rgb565: imageRGB565Base64,
       progress_ms: data.progress_ms,
-      duration_ms: data.item.duration_ms
+      duration_ms: data.item.duration_ms,
+      track_id: data.item.id
     };
+
+    // 🔎 Récupère l'audio analysis
+    const analysisResponse = await fetch(`https://api.spotify.com/v1/audio-analysis/${track.track_id}`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+
+    if (analysisResponse.ok) {
+      const analysis = await analysisResponse.json();
+      // ⚠️ On extrait seulement start, duration et loudness des 64 premiers segments
+      track.segments = analysis.segments.slice(0, 64).map(seg => ({
+        start: seg.start,
+        duration: seg.duration,
+        loudness: seg.loudness_max
+      }));
+    } else {
+      track.segments = [];
+    }
 
     res.json(track);
   } catch (err) {
@@ -108,6 +129,7 @@ app.get('/nowplaying', async (req, res) => {
     res.status(500).send('Erreur serveur.');
   }
 });
+
 
 // ✅ ENDPOINT MISE À JOUR OTA
 
