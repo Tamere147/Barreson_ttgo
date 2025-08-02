@@ -4,6 +4,7 @@ import fetch from 'node-fetch';
 import sharp from 'sharp';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 // ✅ CONSTANTES SPOTIFY
 const CLIENT_ID = 'd1602b409bf54134b521955ac62b08e6';
@@ -112,15 +113,16 @@ app.get('/nowplaying', async (req, res) => {
 
 // Sert version.txt
 app.get('/firmware/version.txt', (req, res) => {
-  res.send('1.0.1'); // ✅ à modifier manuellement pour chaque nouvelle version
+  const info = JSON.parse(fs.readFileSync(path.join(firmwareDir, 'firmware.json')));
+  res.send(info.latest);
 });
 
-// Sert le fichier .bin
-app.get('/firmware/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filepath = path.join(firmwareDir, filename);
-  res.sendFile(filepath);
-});
+// Sert automatiquement le dernier firmware
+app.get('/firmware/latest.bin', (req, res) => {
+  const info = JSON.parse(fs.readFileSync(path.join(firmwareDir, 'firmware.json')));
+  const firmwarePath = path.join(firmwareDir, info.filename);
+  res.sendFile(firmwarePath);
+})
 
 // ✅ Page racine simple
 app.get('/', (req, res) => {
