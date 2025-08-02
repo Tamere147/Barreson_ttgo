@@ -107,7 +107,8 @@ app.get('/nowplaying', async (req, res) => {
       : null;
 
     const trackId = data.item.id;
-const analysisResponse = await fetch(analysisUrl, {
+  const analysisResponse = await fetch(analysisUrl, {
+  const analysisUrl = `https://api.spotify.com/v1/audio-analysis/${trackId}`;
   headers: { 'Authorization': `Bearer ${accessToken}` }
 });
 
