@@ -17,24 +17,92 @@ const CLIENT_ID = 'd1602b409bf54134b521955ac62b08e6';
 const CLIENT_SECRET = 'c12f56e3c9a543b58b92455ede5f58d8';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN || '';
 
-// 🔗 Appairages stockés sur disque
+// 🔗 GitHub persistence pour pairings.json (survit aux redémarrages Koyeb)
+// Variables d'env requises : GITHUB_TOKEN, GITHUB_REPO (ex: "thomas/Barreson_ttgo")
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_REPO  = process.env.GITHUB_REPO  || '';
+const GITHUB_PAIRINGS_PATH = 'pairings.json';
+let pairingsSha = null; // SHA GitHub du fichier (nécessaire pour les updates)
+
+async function loadPairingsFromGitHub() {
+  if (!GITHUB_TOKEN || !GITHUB_REPO) return null;
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/contents/${GITHUB_PAIRINGS_PATH}`,
+      { headers: { 'Authorization': `token ${GITHUB_TOKEN}`, 'Accept': 'application/vnd.github.v3+json' } }
+    );
+    if (!res.ok) return null;
+    const json = await res.json();
+    pairingsSha = json.sha;
+    const content = Buffer.from(json.content, 'base64').toString('utf8');
+    console.log('✅ pairings.json chargé depuis GitHub');
+    return JSON.parse(content);
+  } catch (err) {
+    console.warn('⚠️ Chargement GitHub échoué:', err.message);
+    return null;
+  }
+}
+
+async function pushPairingsToGitHub() {
+  if (!GITHUB_TOKEN || !GITHUB_REPO) return;
+  try {
+    const content = Buffer.from(JSON.stringify(pairings, null, 2)).toString('base64');
+    const body = { message: 'chore: sync pairings', content, ...(pairingsSha ? { sha: pairingsSha } : {}) };
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_REPO}/contents/${GITHUB_PAIRINGS_PATH}`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      }
+    );
+    if (res.ok) {
+      const json = await res.json();
+      pairingsSha = json.content.sha;
+      console.log('✅ pairings.json synchronisé sur GitHub');
+    } else {
+      const err = await res.json();
+      console.error('⚠️ Erreur push GitHub:', err.message);
+    }
+  } catch (err) {
+    console.error('⚠️ Push GitHub échoué:', err.message);
+  }
+}
+
+// 🔗 Appairages — chargés depuis GitHub au démarrage, sinon depuis disque
 const pairingsPath = path.join(__dirname, 'pairings.json');
 let pairings = {};
-if (fs.existsSync(pairingsPath)) {
-  try {
-    pairings = JSON.parse(fs.readFileSync(pairingsPath, 'utf8'));
-  } catch (err) {
-    console.warn('⚠️ Impossible de charger pairings.json, réinitialisation.', err);
-    pairings = {};
+
+async function initPairings() {
+  const fromGitHub = await loadPairingsFromGitHub();
+  if (fromGitHub) {
+    pairings = fromGitHub;
+    // Synchronise aussi sur disque pour le fallback local
+    try { fs.writeFileSync(pairingsPath, JSON.stringify(pairings, null, 2)); } catch {}
+    return;
+  }
+  // Fallback : fichier local
+  if (fs.existsSync(pairingsPath)) {
+    try {
+      pairings = JSON.parse(fs.readFileSync(pairingsPath, 'utf8'));
+      console.log('✅ pairings.json chargé depuis le disque');
+    } catch (err) {
+      console.warn('⚠️ Impossible de charger pairings.json:', err.message);
+    }
   }
 }
 
 function persistPairings() {
-  try {
-    fs.writeFileSync(pairingsPath, JSON.stringify(pairings, null, 2));
-  } catch (err) {
-    console.error('⚠️ Erreur écriture pairings.json:', err);
+  // Écriture locale
+  try { fs.writeFileSync(pairingsPath, JSON.stringify(pairings, null, 2)); } catch (err) {
+    console.error('⚠️ Erreur écriture disque:', err);
   }
+  // Push GitHub asynchrone (non bloquant)
+  pushPairingsToGitHub().catch(() => {});
 }
 
 function getRefreshTokenForDevice(deviceId = '') {
@@ -430,7 +498,9 @@ app.get('/', (req, res) => {
   res.send('🎧 API TTGO Spotify + OTA prête !');
 });
 
-// ✅ Lancement serveur
-app.listen(port, () => {
-  console.log(`🚀 Serveur TTGO Spotify + OTA sur http://localhost:${port}`);
+// ✅ Lancement serveur — charge les pairings avant d'écouter
+initPairings().then(() => {
+  app.listen(port, () => {
+    console.log(`🚀 Serveur TTGO Spotify + OTA sur http://localhost:${port}`);
+  });
 });
