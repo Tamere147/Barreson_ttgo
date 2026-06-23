@@ -318,6 +318,11 @@ app.get('/nowplaying', async (req, res) => {
     }
 
     const data = await nowPlayingResponse.json();
+
+    if (!data || !data.item) {
+      return res.json({ playing: false, message: 'Rien en cours' });
+    }
+
     const imageUrl = data.item?.album?.images?.[0]?.url || null;
     const imageRGB565Base64 = imageUrl ? await convertImageToRGB565Base64(imageUrl) : null;
 
