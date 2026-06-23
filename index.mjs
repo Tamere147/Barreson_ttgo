@@ -385,6 +385,12 @@ app.get('/nowplaying', async (req, res) => {
       return res.json({ playing: false, message: 'Rien en cours' });
     }
 
+    if (!nowPlayingResponse.ok) {
+      const text = await nowPlayingResponse.text();
+      console.warn('⚠️ Spotify currently-playing non-ok:', nowPlayingResponse.status, text.slice(0, 120));
+      return res.json({ playing: false, message: 'Spotify indisponible', status: nowPlayingResponse.status });
+    }
+
     const data = await nowPlayingResponse.json();
 
     if (!data || !data.item) {
