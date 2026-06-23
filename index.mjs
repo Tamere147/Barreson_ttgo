@@ -140,6 +140,7 @@ function logPairing(deviceId, refreshToken) {
   };
   persistPairings();
   console.log(`🎧 Spotify lié à ${deviceId}`);
+  console.log(`🔑 REFRESH_TOKEN à sauvegarder en variable d'env Koyeb: ${refreshToken}`);
 }
 
 async function getAppAccessToken() {
