@@ -15,7 +15,7 @@ const SPOTIFY_SCOPE = 'user-read-currently-playing user-read-playback-state';
 // ✅ CONSTANTES SPOTIFY (⚠️ mettre en variables d'env en prod)
 const CLIENT_ID = 'd1602b409bf54134b521955ac62b08e6';
 const CLIENT_SECRET = 'c12f56e3c9a543b58b92455ede5f58d8';
-const REFRESH_TOKEN = 'AQD1B6wv-rXieDV6vkH_I-qaF_Arjh_rSJa8UUePuMN0iZbw-lQ24P40Bk44oxlPMukM_5_b0F_AjN0Nm4bxJEuYlEOOMyrDN2Ekc-B14hV0aD4qbm1MO_hRc4hcez6GcrU';
+const REFRESH_TOKEN = process.env.REFRESH_TOKEN || '';
 
 // 🔗 Appairages stockés sur disque
 const pairingsPath = path.join(__dirname, 'pairings.json');
@@ -51,7 +51,9 @@ function deviceHasRefreshToken(deviceId = '') {
 }
 
 function htmlSafe(value) {
-  return String(value || '').replace(/[<>&"]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+  return String(value || '').replace(/[<>&"]/g, (c) => ({
+    '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;'
+  }[c]));
 }
 
 const app = express();
@@ -166,7 +168,8 @@ function rgb888to565(r, g, b) {
 
 async function convertImageToRGB565Base64(url) {
   const response = await fetch(url);
-  const buffer = await response.buffer();
+  // node-fetch v3 : arrayBuffer() remplace buffer() (déprécié)
+  const buffer = Buffer.from(await response.arrayBuffer());
 
   const { data, info } = await sharp(buffer)
     .resize(24, 24)
@@ -175,7 +178,7 @@ async function convertImageToRGB565Base64(url) {
     .toBuffer({ resolveWithObject: true });
 
   if (info.channels !== 3) {
-    throw new Error('L’image n’est pas en RGB');
+    throw new Error("L'image n'est pas en RGB");
   }
 
   const outBuffer = Buffer.alloc(24 * 24 * 2);
@@ -220,6 +223,7 @@ app.get('/pair', (req, res) => {
         button { background:#1db954; border:none; color:#0b1726; padding:12px 18px; font-weight:700; border-radius:10px; cursor:pointer; font-size:16px; }
         button:hover { transform: translateY(-1px); box-shadow:0 8px 20px rgba(29,185,84,0.3); }
         .muted { color:#9fb0c6; }
+        .error { color:#ff6b6b; background:#2a1a1a; padding:10px; border-radius:6px; margin-top:12px; }
       </style>
     </head>
     <body>
@@ -229,7 +233,7 @@ app.get('/pair', (req, res) => {
         <p>Module détecté : <strong>${safeId}</strong></p>
         <div class="card">
           <p class="muted">Une fois connecté, le module utilisera votre compte Spotify pour afficher le morceau en cours.</p>
-          ${alreadyLinked ? '<p>Ce module est déjà associé.</p>' : '<p>Autorisez l\'application pour terminer l\'appairage.</p>'}
+          ${alreadyLinked ? '<p>Ce module est déjà associé.</p>' : "<p>Autorisez l'application pour terminer l'appairage.</p>"}
         </div>
         <form action="/auth/spotify" method="get">
           <input type="hidden" name="deviceId" value="${htmlSafe(deviceId)}">
@@ -250,8 +254,26 @@ app.get('/auth/spotify', (req, res) => {
   res.redirect(buildAuthorizeUrl(deviceId));
 });
 
+// FIX: gestion du paramètre error renvoyé par Spotify en cas d'échec OAuth
 app.get(CALLBACK_PATH, async (req, res) => {
-  const { code, state } = req.query;
+  const { code, state, error } = req.query;
+
+  if (error) {
+    console.error('⚠️ Erreur Spotify OAuth:', error);
+    const backUrl = buildPairingUrl(state);
+    return res.status(400).send(`
+      <html><body style="font-family:Arial;padding:24px;background:#0b1726;color:#f3f5f9;">
+        <h2>Erreur Spotify : ${htmlSafe(error)}</h2>
+        <p>Spotify a refusé l'autorisation. Causes possibles :</p>
+        <ul>
+          <li>Votre compte n'est pas ajouté dans "Users and Access" du Spotify Dashboard</li>
+          <li>Vous avez annulé la demande d'autorisation</li>
+        </ul>
+        <a href="${backUrl}" style="color:#1db954;">Réessayer</a>
+      </body></html>
+    `);
+  }
+
   if (!code || !state) {
     return res.status(400).send('Paramètres manquants.');
   }
@@ -260,7 +282,10 @@ app.get(CALLBACK_PATH, async (req, res) => {
     const refreshToken = await exchangeCodeForRefreshToken(code);
     logPairing(state, refreshToken);
     const backUrl = buildPairingUrl(state);
-    res.send(`<html><body><h2>✅ Appairage réussi pour ${htmlSafe(state)}</h2><p>Vous pouvez fermer cette page. <a href="${backUrl}">Retour</a></p></body></html>`);
+    res.send(`<html><body style="font-family:Arial;padding:24px;background:#0b1726;color:#f3f5f9;">
+      <h2>✅ Appairage réussi pour ${htmlSafe(state)}</h2>
+      <p>Vous pouvez fermer cette page. <a href="${backUrl}" style="color:#1db954;">Retour</a></p>
+    </body></html>`);
   } catch (err) {
     console.error('⚠️ Erreur callback Spotify:', err);
     res.status(500).send('Impossible de finaliser la liaison Spotify.');
@@ -273,12 +298,16 @@ app.get('/nowplaying', async (req, res) => {
     const deviceId = (req.query.deviceId || '').trim();
 
     if (!deviceHasRefreshToken(deviceId) && !REFRESH_TOKEN) {
-      return res.status(428).json({ playing: false, message: 'Appairage Spotify requis', pair_url: buildPairingUrl(deviceId), deviceId });
+      return res.status(428).json({
+        playing: false,
+        message: 'Appairage Spotify requis',
+        pair_url: buildPairingUrl(deviceId),
+        deviceId
+      });
     }
 
     const accessToken = await getAccessToken(deviceId);
 
-    // Récupère la piste en cours
     const nowPlayingResponse = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
@@ -288,13 +317,12 @@ app.get('/nowplaying', async (req, res) => {
     }
 
     const data = await nowPlayingResponse.json();
-    const imageUrl = data.item.album.images[0]?.url || null;
+    const imageUrl = data.item?.album?.images?.[0]?.url || null;
     const imageRGB565Base64 = imageUrl ? await convertImageToRGB565Base64(imageUrl) : null;
 
-    const trackId = data.item.id;
-    console.log("🎵 Track ID:", trackId);
+    const trackId = data.item?.id;
+    console.log('🎵 Track ID:', trackId);
 
-    // 🔹 Récupère la prochaine piste dans la queue
     const queueResponse = await fetch('https://api.spotify.com/v1/me/player/queue', {
       headers: { 'Authorization': `Bearer ${accessToken}` }
     });
@@ -309,7 +337,6 @@ app.get('/nowplaying', async (req, res) => {
       }
     }
 
-    // 🔹 Analyse audio de la piste actuelle
     const analysisToken = await getAppAccessToken();
     const analysisUrl = `https://api.spotify.com/v1/audio-analysis/${trackId}`;
     const analysisResponse = await fetch(analysisUrl, {
@@ -338,8 +365,8 @@ app.get('/nowplaying', async (req, res) => {
       progress_ms: data.progress_ms,
       duration_ms: data.item.duration_ms,
       track_id: trackId,
-      next_track_id: nextTrackId,        // 👈 ID de la prochaine piste
-      next_track_title: nextTrackTitle,  // 👈 Titre de la prochaine piste
+      next_track_id: nextTrackId,
+      next_track_title: nextTrackTitle,
       segments
     };
 
@@ -348,7 +375,12 @@ app.get('/nowplaying', async (req, res) => {
   } catch (err) {
     const deviceId = (req.query.deviceId || '').trim();
     if (err.code === 'NO_REFRESH_TOKEN') {
-      return res.status(428).json({ playing: false, message: 'Appairage Spotify requis', pair_url: buildPairingUrl(deviceId), deviceId });
+      return res.status(428).json({
+        playing: false,
+        message: 'Appairage Spotify requis',
+        pair_url: buildPairingUrl(deviceId),
+        deviceId
+      });
     }
     if (err.code === 'TOKEN_REFRESH_FAIL') {
       if (deviceId) {
@@ -369,14 +401,22 @@ app.get('/nowplaying', async (req, res) => {
 
 // ✅ ENDPOINT MISE À JOUR OTA
 app.get('/firmware/version.txt', (req, res) => {
-  const info = JSON.parse(fs.readFileSync(path.join(firmwareDir, 'firmware.json')));
-  res.send(info.latest);
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(firmwareDir, 'firmware.json')));
+    res.send(info.latest);
+  } catch (err) {
+    res.status(404).send('firmware.json introuvable');
+  }
 });
 
 app.get('/firmware/latest.bin', (req, res) => {
-  const info = JSON.parse(fs.readFileSync(path.join(firmwareDir, 'firmware.json')));
-  const firmwarePath = path.join(firmwareDir, info.filename);
-  res.sendFile(firmwarePath);
+  try {
+    const info = JSON.parse(fs.readFileSync(path.join(firmwareDir, 'firmware.json')));
+    const firmwarePath = path.join(firmwareDir, info.filename);
+    res.sendFile(firmwarePath);
+  } catch (err) {
+    res.status(404).send('Firmware introuvable');
+  }
 });
 
 // ✅ Page racine simple
