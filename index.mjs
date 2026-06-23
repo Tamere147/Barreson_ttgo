@@ -202,7 +202,7 @@ app.get('/pair/status', (req, res) => {
 
 app.get('/pair', (req, res) => {
   const deviceId = (req.query.deviceId || '').trim();
-  const displayId = deviceId.length() ? deviceId : 'inconnu';
+  const displayId = deviceId.length ? deviceId : 'inconnu';
   const safeId = htmlSafe(displayId);
   const alreadyLinked = deviceHasRefreshToken(deviceId);
   const body = `
@@ -350,10 +350,17 @@ app.get('/nowplaying', async (req, res) => {
     if (err.code === 'NO_REFRESH_TOKEN') {
       return res.status(428).json({ playing: false, message: 'Appairage Spotify requis', pair_url: buildPairingUrl(deviceId), deviceId });
     }
-    if (err.code === 'TOKEN_REFRESH_FAIL' && deviceId) {
-      delete pairings[deviceId];
-      persistPairings();
-      return res.status(401).json({ playing: false, message: 'Token Spotify expiré, réassociez le module', pair_url: buildPairingUrl(deviceId), deviceId });
+    if (err.code === 'TOKEN_REFRESH_FAIL') {
+      if (deviceId) {
+        delete pairings[deviceId];
+        persistPairings();
+      }
+      return res.status(401).json({
+        playing: false,
+        message: 'Token Spotify expiré, réassociez le module',
+        pair_url: buildPairingUrl(deviceId),
+        deviceId
+      });
     }
     console.error('💥 Erreur serveur:', err);
     res.status(500).send('Erreur serveur.');
