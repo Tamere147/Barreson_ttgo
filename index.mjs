@@ -13,8 +13,8 @@ const REDIRECT_URI = `${BASE_URL}${CALLBACK_PATH}`;
 const SPOTIFY_SCOPE = 'user-read-currently-playing user-read-playback-state';
 
 // ✅ CONSTANTES SPOTIFY (⚠️ mettre en variables d'env en prod)
-const CLIENT_ID = 'd1602b409bf54134b521955ac62b08e6';
-const CLIENT_SECRET = 'c12f56e3c9a543b58b92455ede5f58d8';
+const CLIENT_ID = '7590bd28c0c0431b959b9cb7fc3600ac';
+const CLIENT_SECRET = 'ad434df7a525453d87a15e86ab7b39be';
 const REFRESH_TOKEN = process.env.REFRESH_TOKEN || '';
 
 // 🔗 GitHub persistence pour pairings.json (survit aux redémarrages Koyeb)
