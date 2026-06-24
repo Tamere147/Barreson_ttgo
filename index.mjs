@@ -149,14 +149,16 @@ async function getAccessToken(deviceId = '') {
     })
   });
 
-  const data = await response.json();
   if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    console.warn(`⚠️ Token refresh ${response.status}:`, text.slice(0, 120));
     const err = new Error(`TOKEN_REFRESH_FAIL_${response.status}`);
     err.code = 'TOKEN_REFRESH_FAIL';
-    err.payload = data;
+    err.status = response.status;
     throw err;
   }
 
+  const data = await response.json();
   return data.access_token;
 }
 
@@ -223,6 +225,10 @@ async function getAppAccessToken() {
     })
   });
 
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`App token refresh ${response.status}: ${text.slice(0, 80)}`);
+  }
   const data = await response.json();
   return data.access_token;
 }
