@@ -129,7 +129,14 @@ const port = process.env.PORT || 3000;
 const firmwareDir = path.join(__dirname, 'firmware');
 
 // ✅ FONCTIONS SPOTIFY
+
+// Cache des access tokens par deviceId (évite un refresh à chaque poll)
+const tokenCache = new Map(); // deviceId → { token, expiresAt }
+
 async function getAccessToken(deviceId = '') {
+  const cached = tokenCache.get(deviceId);
+  if (cached && Date.now() < cached.expiresAt) return cached.token;
+
   const refreshToken = getRefreshTokenForDevice(deviceId);
   if (!refreshToken) {
     const err = new Error('NO_REFRESH_TOKEN');
@@ -159,6 +166,8 @@ async function getAccessToken(deviceId = '') {
   }
 
   const data = await response.json();
+  const expiresIn = (data.expires_in || 3600) - 60; // marge 60s
+  tokenCache.set(deviceId, { token: data.access_token, expiresAt: Date.now() + expiresIn * 1000 });
   return data.access_token;
 }
 
@@ -176,9 +185,15 @@ async function exchangeCodeForRefreshToken(code) {
     })
   });
 
-  const data = await response.json();
-  if (!response.ok || !data.refresh_token) {
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
     const err = new Error(`AUTH_CODE_EXCHANGE_FAIL_${response.status}`);
+    err.payload = text;
+    throw err;
+  }
+  const data = await response.json();
+  if (!data.refresh_token) {
+    const err = new Error(`AUTH_CODE_EXCHANGE_FAIL_NO_TOKEN`);
     err.payload = data;
     throw err;
   }
@@ -213,16 +228,19 @@ function logPairing(deviceId, refreshToken) {
   console.log(`🔑 REFRESH_TOKEN à sauvegarder en variable d'env Koyeb: ${refreshToken}`);
 }
 
+// Cache token app (client_credentials) — partagé, pas lié à un device
+let appTokenCache = null; // { token, expiresAt }
+
 async function getAppAccessToken() {
+  if (appTokenCache && Date.now() < appTokenCache.expiresAt) return appTokenCache.token;
+
   const response = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     headers: {
       'Authorization': 'Basic ' + Buffer.from(`${CLIENT_ID}:${CLIENT_SECRET}`).toString('base64'),
       'Content-Type': 'application/x-www-form-urlencoded'
     },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials'
-    })
+    body: new URLSearchParams({ grant_type: 'client_credentials' })
   });
 
   if (!response.ok) {
@@ -230,8 +248,19 @@ async function getAppAccessToken() {
     throw new Error(`App token refresh ${response.status}: ${text.slice(0, 80)}`);
   }
   const data = await response.json();
+  const expiresIn = (data.expires_in || 3600) - 60;
+  appTokenCache = { token: data.access_token, expiresAt: Date.now() + expiresIn * 1000 };
   return data.access_token;
 }
+
+// Cache audio-analysis par trackId (les segments ne changent jamais pour un même track)
+const analysisCache = new Map(); // trackId → segments[]
+
+// Cache queue par deviceId (valide 30s)
+const queueCache = new Map(); // deviceId → { nextTrackId, nextTrackTitle, expiresAt }
+
+// Suivi du dernier trackId loggé par device (évite le log-spam)
+const lastLoggedTrack = new Map();
 
 // ✅ Conversion image → RGB565 (24×24)
 function rgb888to565(r, g, b) {
@@ -392,8 +421,15 @@ app.get('/nowplaying', async (req, res) => {
     }
 
     if (!nowPlayingResponse.ok) {
-      const text = await nowPlayingResponse.text();
+      const text = await nowPlayingResponse.text().catch(() => '');
       console.warn('⚠️ Spotify currently-playing non-ok:', nowPlayingResponse.status, text.slice(0, 120));
+      if (nowPlayingResponse.status === 429) {
+        const retryAfter = parseInt(nowPlayingResponse.headers.get('Retry-After') || '10', 10);
+        console.warn(`⏳ Rate-limited — retry after ${retryAfter}s`);
+        // On invalide le token caché (Spotify peut en vouloir un nouveau après 429)
+        tokenCache.delete(deviceId);
+        return res.status(429).json({ playing: false, message: 'rate_limited', retry_after: retryAfter });
+      }
       return res.json({ playing: false, message: 'Spotify indisponible', status: nowPlayingResponse.status });
     }
 
@@ -407,38 +443,56 @@ app.get('/nowplaying', async (req, res) => {
     const imageRGB565Base64 = imageUrl ? await convertImageToRGB565Base64(imageUrl) : null;
 
     const trackId = data.item?.id;
-    console.log('🎵 Track ID:', trackId);
 
-    const queueResponse = await fetch('https://api.spotify.com/v1/me/player/queue', {
-      headers: { 'Authorization': `Bearer ${accessToken}` }
-    });
-
-    let nextTrackId = null;
-    let nextTrackTitle = null;
-    if (queueResponse.ok) {
-      const queueData = await queueResponse.json();
-      if (queueData.queue && queueData.queue.length > 0) {
-        nextTrackId = queueData.queue[0].id;
-        nextTrackTitle = queueData.queue[0].name;
-      }
+    // Log seulement au changement de piste
+    if (lastLoggedTrack.get(deviceId) !== trackId) {
+      console.log('🎵 Track ID:', trackId);
+      lastLoggedTrack.set(deviceId, trackId);
     }
 
-    const analysisToken = await getAppAccessToken();
-    const analysisUrl = `https://api.spotify.com/v1/audio-analysis/${trackId}`;
-    const analysisResponse = await fetch(analysisUrl, {
-      headers: { 'Authorization': `Bearer ${analysisToken}` }
-    });
-
-    let segments = [];
-    if (analysisResponse.ok) {
-      const analysisData = await analysisResponse.json();
-      if (Array.isArray(analysisData.segments)) {
-        segments = analysisData.segments.map(s => ({
-          start: s.start,
-          duration: s.duration,
-          loudness: s.loudness_max
-        })).slice(0, 200);
+    // Queue : cachée 30s par device
+    let nextTrackId = null;
+    let nextTrackTitle = null;
+    const cachedQueue = queueCache.get(deviceId);
+    if (cachedQueue && Date.now() < cachedQueue.expiresAt) {
+      nextTrackId = cachedQueue.nextTrackId;
+      nextTrackTitle = cachedQueue.nextTrackTitle;
+    } else {
+      const queueResponse = await fetch('https://api.spotify.com/v1/me/player/queue', {
+        headers: { 'Authorization': `Bearer ${accessToken}` }
+      });
+      if (queueResponse.ok) {
+        const queueData = await queueResponse.json();
+        if (queueData.queue && queueData.queue.length > 0) {
+          nextTrackId = queueData.queue[0].id;
+          nextTrackTitle = queueData.queue[0].name;
+        }
       }
+      queueCache.set(deviceId, { nextTrackId, nextTrackTitle, expiresAt: Date.now() + 30_000 });
+    }
+
+    // Audio-analysis : cachée à vie par trackId (les segments sont immuables)
+    let segments = [];
+    if (analysisCache.has(trackId)) {
+      segments = analysisCache.get(trackId);
+    } else {
+      const analysisToken = await getAppAccessToken();
+      const analysisResponse = await fetch(`https://api.spotify.com/v1/audio-analysis/${trackId}`, {
+        headers: { 'Authorization': `Bearer ${analysisToken}` }
+      });
+      if (analysisResponse.ok) {
+        const analysisData = await analysisResponse.json();
+        if (Array.isArray(analysisData.segments)) {
+          segments = analysisData.segments.map(s => ({
+            start: s.start,
+            duration: s.duration,
+            loudness: s.loudness_max
+          })).slice(0, 200);
+        }
+      } else if (analysisResponse.status === 429) {
+        console.warn('⚠️ Audio-analysis 429 — skip cette fois');
+      }
+      analysisCache.set(trackId, segments);
     }
 
     const track = {
@@ -469,16 +523,19 @@ app.get('/nowplaying', async (req, res) => {
       });
     }
     if (err.code === 'TOKEN_REFRESH_FAIL') {
-      if (deviceId) {
-        delete pairings[deviceId];
-        persistPairings();
+      // Supprimer le pairing SEULEMENT si le token est vraiment rejeté (401/400),
+      // pas sur une erreur temporaire comme 503.
+      if (err.status === 401 || err.status === 400) {
+        if (deviceId) { delete pairings[deviceId]; persistPairings(); }
+        return res.status(401).json({
+          playing: false,
+          message: 'Token Spotify expiré, réassociez le module',
+          pair_url: buildPairingUrl(deviceId),
+          deviceId
+        });
       }
-      return res.status(401).json({
-        playing: false,
-        message: 'Token Spotify expiré, réassociez le module',
-        pair_url: buildPairingUrl(deviceId),
-        deviceId
-      });
+      // Erreur temporaire (503, réseau...) : ne pas délier
+      return res.json({ playing: false, message: 'Spotify temporairement indisponible' });
     }
     console.error('💥 Erreur serveur:', err);
     res.status(500).send('Erreur serveur.');
