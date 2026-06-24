@@ -262,6 +262,9 @@ const queueCache = new Map(); // deviceId → { nextTrackId, nextTrackTitle, exp
 // Suivi du dernier trackId loggé par device (évite le log-spam)
 const lastLoggedTrack = new Map();
 
+// Rate-limit Spotify : timestamp jusqu'auquel on ne doit PAS rappeler Spotify
+const rateLimitUntil = new Map(); // deviceId → timestamp (ms)
+
 // ✅ Conversion image → RGB565 (24×24)
 function rgb888to565(r, g, b) {
   const r5 = (r >> 3) & 0x1F;
@@ -410,6 +413,13 @@ app.get('/nowplaying', async (req, res) => {
       });
     }
 
+    // Court-circuit si Spotify nous a bannis — pas d'appel avant la fin du ban
+    const rlUntil = rateLimitUntil.get(deviceId) || 0;
+    if (Date.now() < rlUntil) {
+      const retryAfter = Math.ceil((rlUntil - Date.now()) / 1000);
+      return res.status(429).json({ playing: false, message: 'rate_limited', retry_after: retryAfter });
+    }
+
     const accessToken = await getAccessToken(deviceId);
 
     const nowPlayingResponse = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
@@ -425,9 +435,9 @@ app.get('/nowplaying', async (req, res) => {
       console.warn('⚠️ Spotify currently-playing non-ok:', nowPlayingResponse.status, text.slice(0, 120));
       if (nowPlayingResponse.status === 429) {
         const retryAfter = parseInt(nowPlayingResponse.headers.get('Retry-After') || '10', 10);
-        console.warn(`⏳ Rate-limited — retry after ${retryAfter}s`);
-        // On invalide le token caché (Spotify peut en vouloir un nouveau après 429)
+        rateLimitUntil.set(deviceId, Date.now() + retryAfter * 1000);
         tokenCache.delete(deviceId);
+        console.warn(`⏳ Rate-limited — bloqué jusqu'à ${new Date(Date.now() + retryAfter * 1000).toISOString()} (${retryAfter}s)`);
         return res.status(429).json({ playing: false, message: 'rate_limited', retry_after: retryAfter });
       }
       return res.json({ playing: false, message: 'Spotify indisponible', status: nowPlayingResponse.status });
