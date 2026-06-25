@@ -81,17 +81,21 @@ async function initPairings() {
   const fromGitHub = await loadPairingsFromGitHub();
   if (fromGitHub) {
     pairings = fromGitHub;
-    // Synchronise aussi sur disque pour le fallback local
     try { fs.writeFileSync(pairingsPath, JSON.stringify(pairings, null, 2)); } catch {}
-    return;
-  }
-  // Fallback : fichier local
-  if (fs.existsSync(pairingsPath)) {
+  } else if (fs.existsSync(pairingsPath)) {
     try {
       pairings = JSON.parse(fs.readFileSync(pairingsPath, 'utf8'));
       console.log('✅ pairings.json chargé depuis le disque');
     } catch (err) {
       console.warn('⚠️ Impossible de charger pairings.json:', err.message);
+    }
+  }
+  // Restaure les rate limits persistés (survivent aux restarts Koyeb)
+  for (const [id, data] of Object.entries(pairings)) {
+    if (typeof data === 'object' && data.rateLimitUntil && data.rateLimitUntil > Date.now()) {
+      rateLimitUntil.set(id, data.rateLimitUntil);
+      const remaining = Math.ceil((data.rateLimitUntil - Date.now()) / 1000);
+      console.warn(`⏳ Rate limit restauré pour ${id} — encore ${remaining}s (jusqu'à ${new Date(data.rateLimitUntil).toISOString()})`);
     }
   }
 }
@@ -265,6 +269,10 @@ const lastLoggedTrack = new Map();
 // Rate-limit Spotify : timestamp jusqu'auquel on ne doit PAS rappeler Spotify
 const rateLimitUntil = new Map(); // deviceId → timestamp (ms)
 
+// Cache /nowplaying : évite de spam Spotify à chaque poll ESP32 (500ms)
+const nowPlayingCache = new Map(); // deviceId → { response, expiresAt }
+const NOWPLAYING_CACHE_TTL = 3000; // 3s → max ~20 appels Spotify/min au lieu de 120
+
 // ✅ Conversion image → RGB565 (24×24)
 function rgb888to565(r, g, b) {
   const r5 = (r >> 3) & 0x1F;
@@ -420,6 +428,12 @@ app.get('/nowplaying', async (req, res) => {
       return res.status(429).json({ playing: false, message: 'rate_limited', retry_after: retryAfter });
     }
 
+    // Cache réponse : évite de spam Spotify à chaque poll ESP32 (500ms → max 1 appel/3s)
+    const cached = nowPlayingCache.get(deviceId);
+    if (cached && Date.now() < cached.expiresAt) {
+      return res.json(cached.response);
+    }
+
     const accessToken = await getAccessToken(deviceId);
 
     const nowPlayingResponse = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
@@ -435,9 +449,16 @@ app.get('/nowplaying', async (req, res) => {
       console.warn('⚠️ Spotify currently-playing non-ok:', nowPlayingResponse.status, text.slice(0, 120));
       if (nowPlayingResponse.status === 429) {
         const retryAfter = parseInt(nowPlayingResponse.headers.get('Retry-After') || '10', 10);
-        rateLimitUntil.set(deviceId, Date.now() + retryAfter * 1000);
+        const deadline = Date.now() + retryAfter * 1000;
+        rateLimitUntil.set(deviceId, deadline);
+        nowPlayingCache.delete(deviceId); // invalide le cache pour ce device
         tokenCache.delete(deviceId);
-        console.warn(`⏳ Rate-limited — bloqué jusqu'à ${new Date(Date.now() + retryAfter * 1000).toISOString()} (${retryAfter}s)`);
+        // Persiste dans pairings.json → survit aux restarts Koyeb
+        const pKey = deviceId || '__global__';
+        if (!pairings[pKey]) pairings[pKey] = {};
+        pairings[pKey].rateLimitUntil = deadline;
+        persistPairings();
+        console.warn(`⏳ Rate-limited — bloqué jusqu'à ${new Date(deadline).toISOString()} (${retryAfter}s)`);
         return res.status(429).json({ playing: false, message: 'rate_limited', retry_after: retryAfter });
       }
       return res.json({ playing: false, message: 'Spotify indisponible', status: nowPlayingResponse.status });
@@ -520,6 +541,7 @@ app.get('/nowplaying', async (req, res) => {
       segments
     };
 
+    nowPlayingCache.set(deviceId, { response: track, expiresAt: Date.now() + NOWPLAYING_CACHE_TTL });
     res.json(track);
 
   } catch (err) {
