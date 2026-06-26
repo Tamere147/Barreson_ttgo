@@ -429,8 +429,13 @@ app.get('/nowplaying', async (req, res) => {
     }
 
     // Cache réponse : évite de spam Spotify à chaque poll ESP32 (500ms → max 1 appel/3s)
+    // progress_ms ajusté par l'âge du cache pour que l'AutoSync ESP32 ne voit pas de drift
     const cached = nowPlayingCache.get(deviceId);
     if (cached && Date.now() < cached.expiresAt) {
+      if (cached.response.playing) {
+        const ageMs = Date.now() - cached.cachedAt;
+        return res.json({ ...cached.response, progress_ms: cached.response.progress_ms + ageMs });
+      }
       return res.json(cached.response);
     }
 
@@ -541,7 +546,7 @@ app.get('/nowplaying', async (req, res) => {
       segments
     };
 
-    nowPlayingCache.set(deviceId, { response: track, expiresAt: Date.now() + NOWPLAYING_CACHE_TTL });
+    nowPlayingCache.set(deviceId, { response: track, cachedAt: Date.now(), expiresAt: Date.now() + NOWPLAYING_CACHE_TTL });
     res.json(track);
 
   } catch (err) {
