@@ -532,7 +532,7 @@ app.get('/nowplaying', async (req, res) => {
     }
 
     const track = {
-      playing: true,
+      playing: data.is_playing,
       title: data.item.name,
       artist: data.item.artists.map(a => a.name).join(', '),
       album: data.item.album.name,
